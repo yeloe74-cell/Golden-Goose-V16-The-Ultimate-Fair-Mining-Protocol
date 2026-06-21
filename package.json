@@ -1,14 +1,14 @@
 {
   "name": "golden-goose-v16",
   "version": "1.0.0",
-  "description": "The official core protocol for the V16 AI Empire.",
-  "main": "core.js",
   "scripts": {
-    "start": "node core.js"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
   },
   "dependencies": {
-    "react": "^18.0.0",
-    "next": "latest"
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "next": "14.2.3"
   }
 }
-
