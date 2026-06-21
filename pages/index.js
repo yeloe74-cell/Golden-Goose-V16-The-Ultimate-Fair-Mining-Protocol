@@ -17,30 +17,38 @@ export default function Home() {
   const [streak, setStreak] = useState(0);
   const [vip, setVip] = useState(0);
   const [vipMiningLeft, setVipMiningLeft] = useState(0);
-  const [language, setLanguage] = useState('en');
+  const [freeMinings, setFreeMinings] = useState(CONFIG.FREE_MININGS);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // ==================== INIT ====================
   useEffect(() => {
-    // Load saved data from Storage
     const savedBalance = Storage.get('gg_balance');
     const savedUsd = Storage.get('gg_usd');
     const savedStreak = Storage.get('gg_streak');
     const savedVip = Storage.get('gg_vip');
     const savedVipLeft = Storage.get('gg_vip_left');
+    const savedFree = Storage.get('gg_free');
 
     if (savedBalance) setBalance(savedBalance);
     if (savedUsd) setUsdBalance(savedUsd);
     if (savedStreak) setStreak(savedStreak);
     if (savedVip) setVip(savedVip);
     if (savedVipLeft) setVipMiningLeft(savedVipLeft);
+    if (savedFree !== null) setFreeMinings(savedFree);
 
-    // Resume mining if exists
     const savedEnd = Storage.get('gg_mining_end');
     if (savedEnd && savedEnd > Date.now()) {
       setIsMining(true);
       setMiningEnd(savedEnd);
+    }
+
+    // VIP Expire Check
+    if (vip > 0 && vipMiningLeft <= 0) {
+      setVip(0);
+      setVipMiningLeft(0);
+      Storage.remove('gg_vip');
+      Storage.remove('gg_vip_left');
     }
 
     setLoading(false);
@@ -53,15 +61,40 @@ export default function Home() {
     Storage.set('gg_streak', streak);
     Storage.set('gg_vip', vip);
     Storage.set('gg_vip_left', vipMiningLeft);
-  }, [balance, usdBalance, streak, vip, vipMiningLeft]);
+    Storage.set('gg_free', freeMinings);
+  }, [balance, usdBalance, streak, vip, vipMiningLeft, freeMinings]);
 
-  // ==================== MINING FUNCTIONS ====================
+  // ==================== TOAST ====================
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  // ==================== MINING ====================
   const startMining = () => {
     if (isMining) {
       showToast('⏳ Mining already in progress...');
       return;
     }
 
+    // VIP check
+    if (vip > 0 && vipMiningLeft <= 0) {
+      showToast('💎 VIP Mining limit reached! Renew VIP.');
+      return;
+    }
+
+    // Free mining check
+    if (freeMinings > 0) {
+      setFreeMinings(prev => prev - 1);
+      setIsMining(true);
+      const endTime = Date.now() + CONFIG.DAY_MS;
+      setMiningEnd(endTime);
+      Storage.set('gg_mining_end', endTime);
+      showToast(`🎁 Free Mining started! (${freeMinings - 1} left)`);
+      return;
+    }
+
+    // Normal mining
     if (balance < CONFIG.MINING_COST) {
       showToast(`❌ Need ${CONFIG.MINING_COST} Coins to mine!`);
       return;
@@ -69,7 +102,9 @@ export default function Home() {
 
     setBalance(prev => prev - CONFIG.MINING_COST);
     setIsMining(true);
-    setMiningEnd(Date.now() + CONFIG.DAY_MS);
+    const endTime = Date.now() + CONFIG.DAY_MS;
+    setMiningEnd(endTime);
+    Storage.set('gg_mining_end', endTime);
     showToast('⛏️ Mining started! Come back in 24 hours.');
   };
 
@@ -86,20 +121,18 @@ export default function Home() {
 
     setIsMining(false);
     setMiningEnd(null);
+    Storage.remove('gg_mining_end');
+
+    // Add reward
     setUsdBalance(prev => prev + CONFIG.MINING_REWARD);
     setStreak(prev => prev + 1);
 
+    // VIP mining count
     if (vip > 0) {
       setVipMiningLeft(prev => Math.max(0, prev - 1));
     }
 
     showToast(`🎉 $${CONFIG.MINING_REWARD} Claimed!`);
-  };
-
-  // ==================== TOAST ====================
-  const showToast = (message) => {
-    setToast(message);
-    setTimeout(() => setToast(null), 2500);
   };
 
   // ==================== TIMER ====================
@@ -111,6 +144,8 @@ export default function Home() {
     const secs = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
     return `${hrs}:${mins}:${secs}`;
   };
+
+  const isClaimReady = miningEnd && Date.now() >= miningEnd;
 
   // ==================== LOADING ====================
   if (loading) {
@@ -127,11 +162,7 @@ export default function Home() {
   return (
     <div style={styles.container}>
       {/* Toast */}
-      {toast && (
-        <div style={styles.toast}>
-          {toast}
-        </div>
-      )}
+      {toast && <div style={styles.toast}>{toast}</div>}
 
       {/* Header */}
       <div style={styles.header}>
@@ -140,15 +171,6 @@ export default function Home() {
           {vip > 0 && <span style={styles.vipBadge}>💎 VIP</span>}
           <span style={styles.streakBadge}>🔥 {streak} Day Streak</span>
         </div>
-      </div>
-
-      {/* Status */}
-      <div style={styles.statusBox}>
-        <h3>Engine Status: <span style={{ color: '#00e676' }}>Active</span></h3>
-        <p>Modules: core, i18n, spin, tasks</p>
-        <p style={{ fontSize: '12px', color: '#888' }}>
-          AI: {AI.status()}
-        </p>
       </div>
 
       {/* Balance */}
@@ -170,9 +192,16 @@ export default function Home() {
         </div>
       )}
 
+      {/* Free Mining Status */}
+      {freeMinings > 0 && (
+        <div style={styles.freeStatus}>
+          🎁 Free Mining: {freeMinings} left
+        </div>
+      )}
+
       {/* Mining Section */}
       <div style={styles.miningBox}>
-        <h3>⛏️ Mining</h3>
+        <h3 style={styles.miningTitle}>⛏️ Mining</h3>
         <p style={styles.miningInfo}>
           {isMining ? (
             <>
@@ -187,11 +216,15 @@ export default function Home() {
 
         {isMining ? (
           <button
-            style={styles.claimButton}
+            style={{
+              ...styles.claimButton,
+              opacity: isClaimReady ? 1 : 0.5,
+              cursor: isClaimReady ? 'pointer' : 'not-allowed',
+            }}
             onClick={claimMining}
-            disabled={Date.now() < miningEnd}
+            disabled={!isClaimReady}
           >
-            {Date.now() >= miningEnd ? '💎 Claim $2' : '⏳ Mining...'}
+            {isClaimReady ? '💎 Claim $2' : '⏳ Mining...'}
           </button>
         ) : (
           <button
@@ -202,14 +235,6 @@ export default function Home() {
           </button>
         )}
       </div>
-
-      {/* Launch Mining Button (Original) */}
-      <button
-        style={styles.launchButton}
-        onClick={() => showToast('🚀 Mining Protocol Launched!')}
-      >
-        🚀 Launch Mining
-      </button>
     </div>
   );
 }
@@ -282,13 +307,6 @@ const styles = {
     fontSize: '12px',
     fontWeight: 'bold',
   },
-  statusBox: {
-    border: '1px solid rgba(255,255,255,0.1)',
-    padding: '16px',
-    borderRadius: '12px',
-    marginBottom: '16px',
-    background: 'rgba(255,255,255,0.03)',
-  },
   balanceBox: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -316,8 +334,19 @@ const styles = {
     padding: '10px',
     borderRadius: '10px',
     textAlign: 'center',
-    marginBottom: '16px',
+    marginBottom: '12px',
     color: '#ffd700',
+    fontSize: '14px',
+    fontWeight: 'bold',
+  },
+  freeStatus: {
+    background: 'rgba(0,200,83,0.1)',
+    border: '1px solid rgba(0,200,83,0.2)',
+    padding: '10px',
+    borderRadius: '10px',
+    textAlign: 'center',
+    marginBottom: '12px',
+    color: '#00e676',
     fontSize: '14px',
     fontWeight: 'bold',
   },
@@ -326,12 +355,15 @@ const styles = {
     border: '1px solid rgba(255,255,255,0.08)',
     padding: '16px',
     borderRadius: '12px',
-    marginBottom: '16px',
+  },
+  miningTitle: {
+    color: '#ffd700',
+    marginBottom: '8px',
   },
   miningInfo: {
     fontSize: '14px',
     color: '#aaa',
-    margin: '8px 0',
+    marginBottom: '12px',
   },
   timer: {
     fontSize: '24px',
@@ -348,7 +380,6 @@ const styles = {
     fontWeight: 'bold',
     color: '#000',
     cursor: 'pointer',
-    marginTop: '8px',
   },
   claimButton: {
     width: '100%',
@@ -360,18 +391,5 @@ const styles = {
     fontWeight: 'bold',
     color: '#000',
     cursor: 'pointer',
-    marginTop: '8px',
-  },
-  launchButton: {
-    width: '100%',
-    padding: '14px',
-    background: 'linear-gradient(135deg, #7c4dff, #651fff)',
-    border: 'none',
-    borderRadius: '12px',
-    fontSize: '16px',
-    fontWeight: 'bold',
-    color: '#fff',
-    cursor: 'pointer',
-    marginTop: '8px',
   },
 };
